@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-entrypoint
+  namespace: llm-sandbox
+data:
+  entrypoint.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "==> Installing fuse-overlayfs..."
+    apt-get update && apt-get install -y fuse-overlayfs
+
+    UPPER="/pvc/upper"
+    WORK="/pvc/work"
+    MERGED="/merged"
+
+    mkdir -p "$UPPER" "$WORK" "$MERGED"
+
+    # Mount fuse-overlayfs: lower=base image root, upper=PVC (persisted), merged=union view
+    fuse-overlayfs \
+      -o lowerdir=/ \
+      -o upperdir="$UPPER" \
+      -o workdir="$WORK" \
+      "$MERGED"
+
+    # Bind-mount essential filesystems into the merged root
+    mount --bind /proc "$MERGED/proc"
+    mount --bind /sys "$MERGED/sys"
+    mount --bind /dev "$MERGED/dev"
+    mount --bind /etc/resolv.conf "$MERGED/etc/resolv.conf"
+
+    echo "Overlay mounted. Entering sandbox..."
+
+    # Chroot into merged view and start a long-running process on port 1234
+    exec chroot "$MERGED" /bin/bash -c "
+      # Keep container alive — listen on port 1234 for shell access via socat
+      if command -v socat &>/dev/null; then
+        exec socat TCP-LISTEN:1234,reuseaddr,fork EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane
+      else
+        echo 'socat not found, installing...'
+        apt-get update && apt-get install -y socat
+        exec socat TCP-LISTEN:1234,reuseaddr,fork EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane
+      fi
+    "

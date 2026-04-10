@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: llm-sandbox
+  namespace: llm-sandbox
+spec:
+  serviceName: llm-sandbox
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llm-sandbox
+  template:
+    metadata:
+      labels:
+        app: llm-sandbox
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: storage
+      containers:
+      - name: sandbox
+        image: kalilinux/kali-rolling:latest
+        command: ["/bin/bash", "/entrypoint/entrypoint.sh"]
+        ports:
+        - containerPort: 1234
+          name: shell
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1500m"
+            memory: "2Gi"
+            github.com/fuse: 1
+        securityContext:
+          capabilities:
+            add: ["SYS_ADMIN"]
+        volumeMounts:
+        - name: workspace
+          mountPath: /pvc
+        - name: entrypoint
+          mountPath: /entrypoint
+      volumes:
+      - name: entrypoint
+        configMap:
+          name: sandbox-entrypoint
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: workspace
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
