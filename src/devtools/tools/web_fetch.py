@@ -1,6 +1,5 @@
 """Web fetch tool."""
 
-import ssl
 from urllib.parse import urlparse
 
 import httpx
@@ -37,7 +36,7 @@ def web_fetch(
 
     validate_url_not_internal(url)
 
-    with httpx.Client(follow_redirects=True, timeout=timeout, verify=ssl.create_default_context()) as client:
+    with httpx.Client(follow_redirects=True, timeout=timeout, verify=False) as client:
         response = client.request(method, url, headers=headers)
 
     body = response.text
