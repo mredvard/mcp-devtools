@@ -16,3 +16,4 @@ import devtools.tools.grep  # noqa: E402, F401
 import devtools.tools.bash  # noqa: E402, F401
 import devtools.tools.todo_write  # noqa: E402, F401
 import devtools.tools.web_fetch  # noqa: E402, F401
+import devtools.tools.web_search  # noqa: E402, F401
