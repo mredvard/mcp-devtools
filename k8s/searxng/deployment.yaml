@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: searxng
+  namespace: searxng
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: searxng
+  template:
+    metadata:
+      labels:
+        app: searxng
+    spec:
+      initContainers:
+      - name: copy-config
+        image: busybox:latest
+        command: ["sh", "-c", "cp /config-ro/settings.yml /etc/searxng/settings.yml"]
+        volumeMounts:
+        - name: config-ro
+          mountPath: /config-ro
+        - name: config
+          mountPath: /etc/searxng
+      containers:
+      - name: searxng
+        image: searxng/searxng:latest
+        env:
+        - name: SEARXNG_PORT
+          value: "8080"
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/searxng
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+      volumes:
+      - name: config-ro
+        configMap:
+          name: searxng-config
+      - name: config
+        emptyDir: {}
