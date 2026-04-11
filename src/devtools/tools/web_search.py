@@ -21,15 +21,22 @@ def web_search(
 ) -> str:
     """Search the web using SearXNG metasearch engine.
 
+    The query supports SearXNG search syntax:
+      - Select engines with `!` prefix: `!google python`, `!wp berlin`, `!ddg test`
+      - Chain multiple engines/categories: `!map !ddg !wp paris`
+      - Filter by language with `:` prefix: `:fr !wp Wau Holland`, `:de berlin`
+      - Use `!!` for external bangs (DuckDuckGo-style): `!!wfr Wau Holland`
+      - Use `!!` alone to auto-redirect to first result: `!! Wau Holland`
+
     Args:
-        query: The search query string.
+        query: The search query string. Supports SearXNG operators described above.
         categories: Comma-separated search categories (general, images, news, science, files, it, map, music, social media, videos).
-        language: Search language code (default "en").
+        language: Search language code (default "en"). Can also be set in query with `:lang` prefix.
         max_results: Maximum number of results to return (default 10).
         timeout: Request timeout in seconds.
 
     Returns:
-        Formatted search results with title, URL, and snippet.
+        Formatted search results with title, URL, snippet, score, and metadata.
     """
     if not query.strip():
         raise ValueError("Search query cannot be empty.")
