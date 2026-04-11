@@ -11,7 +11,7 @@ A StatefulSet running Kali Linux with a fuse-overlayfs filesystem overlay. Any c
 │     /merged (chroot)        │  ← what the sandbox user sees
 ├─────────────────────────────┤
 │  upper: /pvc/upper (PVC)    │  ← writable, persists all changes
-│  lower: / (base image)      │  ← read-only Kali rolling image
+│  lower: /rootfs (bind of /)  │  ← read-only Kali rolling image
 └─────────────────────────────┘
 ```
 
@@ -90,7 +90,14 @@ kubectl -n llm-sandbox exec -it llm-sandbox-0 -- /bin/bash
 
 1. Pod starts with Kali Linux base image
 2. Entrypoint runs `apt-get install fuse-overlayfs` (from base image, not persisted)
-3. fuse-overlayfs mounts the overlay: lower=`/`, upper=`/pvc/upper`, merged=`/merged`
-4. `/proc`, `/sys`, `/dev`, `/etc/resolv.conf` are bind-mounted into `/merged`
-5. Chroot into `/merged`
-6. socat starts listening on port 1234, spawning bash shells for each connection
+3. Non-recursive bind mount of `/` to `/rootfs` — strips submounts so `/rootfs/merged` is an empty dir, avoiding a FUSE deadlock (see below)
+4. fuse-overlayfs mounts the overlay: lower=`/rootfs`, upper=`/pvc/upper`, merged=`/merged`
+5. `/proc`, `/sys`, `/dev`, `/etc/resolv.conf` are bind-mounted into `/merged`
+6. Chroot into `/merged`
+7. socat starts listening on port 1234, spawning bash shells for each connection
+
+## FUSE Deadlock (why lowerdir != /)
+
+fuse-overlayfs is single-threaded. If `lowerdir=/`, the lower layer includes `/merged` — the FUSE mountpoint itself. When any command (e.g. `ls /`) triggers a `stat` on the `merged` entry, fuse-overlayfs tries to access `/merged` in the lower layer, which routes back through FUSE to itself. Single thread = permanent deadlock.
+
+The fix: `mount --bind / /rootfs` creates a non-recursive bind where `/rootfs/merged` is just an empty mountpoint stub, not the live FUSE mount. Using `/rootfs` as lowerdir breaks the recursion.

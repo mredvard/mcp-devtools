@@ -9,17 +9,23 @@ data:
     set -e
 
     echo "==> Installing fuse-overlayfs..."
-    apt-get update && apt-get install -y fuse-overlayfs
+    apt-get update && apt-get install -y fuse-overlayfs ca-certificates
 
     UPPER="/pvc/upper"
     WORK="/pvc/work"
+    LOWER="/rootfs"
     MERGED="/merged"
 
-    mkdir -p "$UPPER" "$WORK" "$MERGED"
+    mkdir -p "$UPPER" "$WORK" "$LOWER" "$MERGED"
 
-    # Mount fuse-overlayfs: lower=base image root, upper=PVC (persisted), merged=union view
+    # Bind-mount the root filesystem WITHOUT submounts so that /rootfs/merged
+    # and /rootfs/pvc are just empty dirs, not live mounts. This prevents
+    # fuse-overlayfs (single-threaded) from recursing into its own FUSE
+    # mountpoint when it stats lowerdir entries, which causes a deadlock.
+    mount --bind / "$LOWER"
+
     fuse-overlayfs \
-      -o lowerdir=/ \
+      -o lowerdir="$LOWER" \
       -o upperdir="$UPPER" \
       -o workdir="$WORK" \
       "$MERGED"
@@ -27,19 +33,19 @@ data:
     # Bind-mount essential filesystems into the merged root
     mount --bind /proc "$MERGED/proc"
     mount --bind /sys "$MERGED/sys"
-    mount --bind /dev "$MERGED/dev"
+    mount --rbind /dev "$MERGED/dev"
     mount --bind /etc/resolv.conf "$MERGED/etc/resolv.conf"
+
+    # Bind-mount host CA certificates into the chroot
+    mkdir -p "$MERGED/host-ca"
+    mount --bind /host-ca "$MERGED/host-ca"
 
     echo "Overlay mounted. Entering sandbox..."
 
-    # Chroot into merged view and start a long-running process on port 1234
+    # Chroot into merged view and start the MCP server on port 1234
     exec chroot "$MERGED" /bin/bash -c "
-      # Keep container alive — listen on port 1234 for shell access via socat
-      if command -v socat &>/dev/null; then
-        exec socat TCP-LISTEN:1234,reuseaddr,fork EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane
-      else
-        echo 'socat not found, installing...'
-        apt-get update && apt-get install -y socat
-        exec socat TCP-LISTEN:1234,reuseaddr,fork EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane
-      fi
+      export SSL_CERT_FILE=/host-ca/ca-certificates.crt
+      export SSL_CERT_DIR=/host-ca
+      cd /root/mcp-devtools
+      exec uv run uvicorn devtools.app:app --host 0.0.0.0 --port 1234
     "

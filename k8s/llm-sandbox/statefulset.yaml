@@ -39,11 +39,18 @@ spec:
           mountPath: /pvc
         - name: entrypoint
           mountPath: /entrypoint
+        - name: host-ca-certs
+          mountPath: /host-ca
+          readOnly: true
       volumes:
       - name: entrypoint
         configMap:
           name: sandbox-entrypoint
           defaultMode: 0755
+      - name: host-ca-certs
+        hostPath:
+          path: /etc/ssl/certs
+          type: Directory
   volumeClaimTemplates:
   - metadata:
       name: workspace
