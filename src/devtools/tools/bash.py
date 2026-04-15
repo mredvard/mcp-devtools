@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from devtools.guardrails import validate_bash_command
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 MAX_TIMEOUT = 600
 
@@ -16,7 +16,7 @@ def bash_exec(command: str, timeout: int = 120, cwd: str | None = None) -> str:
     Args:
         command: The shell command to execute.
         timeout: Timeout in seconds (max 600).
-        cwd: Working directory for the command. Defaults to current directory.
+        cwd: Working directory for the command. Defaults to /home/sandbox.
 
     Returns:
         Command output including stdout, stderr, and return code.
@@ -24,7 +24,7 @@ def bash_exec(command: str, timeout: int = 120, cwd: str | None = None) -> str:
     validate_bash_command(command)
 
     timeout = min(timeout, MAX_TIMEOUT)
-    work_dir = cwd if cwd else None
+    work_dir = cwd if cwd else DEFAULT_WORKDIR
 
     if work_dir and not Path(work_dir).is_dir():
         raise FileNotFoundError(f"Working directory not found: {work_dir}")

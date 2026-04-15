@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected, validate_path_not_sensitive
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 
 @mcp.tool()
@@ -22,7 +22,7 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
     validate_path_not_protected(file_path)
     validate_path_not_sensitive(file_path, operation="edit")
 
-    p = Path(file_path)
+    p = Path(file_path) if Path(file_path).is_absolute() else Path(DEFAULT_WORKDIR) / file_path
 
     if not p.exists():
         raise FileNotFoundError(f"File not found: {file_path}")

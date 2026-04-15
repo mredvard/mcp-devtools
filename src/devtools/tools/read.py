@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from devtools.guardrails import validate_path_not_sensitive
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico"}
 
@@ -24,7 +24,7 @@ def read_file(file_path: str, offset: int = 0, limit: int = 0) -> str:
     """
     validate_path_not_sensitive(file_path, operation="read")
 
-    p = Path(file_path)
+    p = Path(file_path) if Path(file_path).is_absolute() else Path(DEFAULT_WORKDIR) / file_path
 
     if not p.exists():
         raise FileNotFoundError(f"File not found: {file_path}")

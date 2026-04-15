@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 MAX_RESULTS = 1000
 
@@ -19,7 +19,7 @@ def glob_files(pattern: str, path: str | None = None) -> str:
     Returns:
         Matching file paths sorted by modification time (newest first), one per line.
     """
-    base = Path(path) if path else Path.cwd()
+    base = Path(path) if path else Path(DEFAULT_WORKDIR)
 
     if not base.exists():
         raise FileNotFoundError(f"Directory not found: {base}")

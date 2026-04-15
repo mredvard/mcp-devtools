@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected, validate_path_not_sensitive
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 
 @mcp.tool()
@@ -21,7 +21,7 @@ def write_file(file_path: str, content: str, create_dirs: bool = True) -> str:
     validate_path_not_protected(file_path)
     validate_path_not_sensitive(file_path, operation="write")
 
-    p = Path(file_path)
+    p = Path(file_path) if Path(file_path).is_absolute() else Path(DEFAULT_WORKDIR) / file_path
 
     if create_dirs:
         p.parent.mkdir(parents=True, exist_ok=True)

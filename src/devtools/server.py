@@ -1,6 +1,10 @@
 """FastMCP server instance and tool registration."""
 
+import os
+
 from fastmcp import FastMCP
+
+DEFAULT_WORKDIR = os.environ.get("DEFAULT_WORKDIR", "/home/sandbox")
 
 mcp = FastMCP(
     name="DevTools Server",

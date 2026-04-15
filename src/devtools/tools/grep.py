@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected
-from devtools.server import mcp
+from devtools.server import DEFAULT_WORKDIR, mcp
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", ".tox", ".mypy_cache"}
 
@@ -31,7 +31,7 @@ def grep_files(
     Returns:
         Matching lines in filepath:lineno:content format.
     """
-    base = Path(path) if path else Path.cwd()
+    base = Path(path) if path else Path(DEFAULT_WORKDIR)
 
     if not base.exists():
         raise FileNotFoundError(f"Path not found: {base}")
