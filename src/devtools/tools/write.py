@@ -10,9 +10,14 @@ from devtools.server import DEFAULT_WORKDIR, mcp
 def write_file(file_path: str, content: str, create_dirs: bool = True) -> str:
     """Create or overwrite a file with the given content.
 
+    IMPORTANT: Both file_path and content are required and must be provided
+    together in a single call. Do not call this tool without supplying the
+    full content — there is no way to append or fill it in afterward.
+
     Args:
         file_path: Absolute path to the file to write.
-        content: The content to write to the file.
+        content: The full text content to write to the file. Must not be
+            omitted or left empty; include the entire file body here.
         create_dirs: If True, create parent directories as needed.
 
     Returns:
