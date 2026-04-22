@@ -1,5 +1,7 @@
 """Tests for web_search tool."""
 
+from unittest.mock import MagicMock, patch
+
 import httpx
 import respx
 
@@ -183,3 +185,95 @@ def test_search_passes_categories():
     assert route.called
     request = route.calls[0].request
     assert "categories=news" in str(request.url)
+
+
+# --- Tavily provider tests ---
+
+TAVILY_SEARCH_RESPONSE = {
+    "query": "python",
+    "results": [
+        {
+            "title": "Welcome to Python.org",
+            "url": "https://www.python.org/",
+            "content": "Python is a versatile and easy-to-learn language.",
+            "score": 0.95,
+        },
+        {
+            "title": "Python Tutorial - W3Schools",
+            "url": "https://www.w3schools.com/python/",
+            "content": "W3Schools offers free online tutorials.",
+            "score": 0.88,
+        },
+    ],
+}
+
+
+@patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
+@patch("devtools.tools.web_search.TavilyClient", create=True)
+def test_tavily_search_success(mock_tavily_cls):
+    mock_client = MagicMock()
+    mock_client.search.return_value = TAVILY_SEARCH_RESPONSE
+    mock_tavily_cls.return_value = mock_client
+
+    with patch("devtools.tools.web_search._search_tavily") as original:
+        # Call through to the real implementation but with mocked TavilyClient
+        original.side_effect = None  # disable side_effect so we call real func
+    # Actually call the real function with patched module-level import
+    from devtools.tools.web_search import _search_tavily
+
+    with patch("tavily.TavilyClient", return_value=mock_client):
+        result = _search_tavily("python", 10)
+
+    assert "Welcome to Python.org" in result
+    assert "https://www.python.org/" in result
+    assert "Python is a versatile" in result
+    assert "score: 0.95" in result
+    mock_client.search.assert_called_once_with(query="python", max_results=10)
+
+
+@patch("tavily.TavilyClient")
+@patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
+def test_tavily_search_no_results(mock_tavily_cls):
+    mock_client = MagicMock()
+    mock_client.search.return_value = {"query": "xyznonexistent", "results": []}
+    mock_tavily_cls.return_value = mock_client
+
+    from devtools.tools.web_search import _search_tavily
+
+    result = _search_tavily("xyznonexistent", 10)
+    assert "No results found" in result
+
+
+@patch("tavily.TavilyClient")
+@patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
+def test_tavily_search_max_results(mock_tavily_cls):
+    mock_client = MagicMock()
+    mock_client.search.return_value = TAVILY_SEARCH_RESPONSE
+    mock_tavily_cls.return_value = mock_client
+
+    from devtools.tools.web_search import _search_tavily
+
+    result = _search_tavily("python", 5)
+    mock_client.search.assert_called_once_with(query="python", max_results=5)
+    assert "Welcome to Python.org" in result
+
+
+@patch("tavily.TavilyClient")
+@patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
+def test_tavily_provider_routing(mock_tavily_cls):
+    """Verify web_search dispatches to Tavily when SEARCH_PROVIDER=tavily."""
+    mock_client = MagicMock()
+    mock_client.search.return_value = TAVILY_SEARCH_RESPONSE
+    mock_tavily_cls.return_value = mock_client
+
+    result = web_search("python")
+    assert "Welcome to Python.org" in result
+
+
+def test_tavily_empty_query():
+    """Empty query should raise ValueError regardless of provider."""
+    try:
+        web_search("   ")
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "empty" in str(e).lower()
