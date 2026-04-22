@@ -1,4 +1,4 @@
-"""Web search tool using SearXNG."""
+"""Web search tool using SearXNG or Tavily."""
 
 import os
 
@@ -10,37 +10,54 @@ SEARXNG_BASE_URL = os.environ.get(
     "SEARXNG_URL", "http://searxng.searxng.svc.cluster.local:8080"
 )
 
+SEARCH_PROVIDER = os.environ.get("SEARCH_PROVIDER", "searxng").lower()
 
-@mcp.tool()
-def web_search(
+
+def _search_tavily(query: str, max_results: int) -> str:
+    """Execute a search using the Tavily API."""
+    if not os.environ.get("TAVILY_API_KEY"):
+        raise ValueError(
+            "TAVILY_API_KEY environment variable is required when SEARCH_PROVIDER=tavily"
+        )
+
+    from tavily import TavilyClient
+
+    client = TavilyClient()
+    response = client.search(query=query, max_results=max_results)
+
+    results = response.get("results", [])
+    if not results:
+        return f"No results found for: {query}"
+
+    lines = [f"Search results for: {query}\n"]
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "No title")
+        url = r.get("url", "")
+        snippet = r.get("content", "")
+        score = r.get("score")
+
+        lines.append(f"{i}. {title}")
+        lines.append(f"   URL: {url}")
+        if snippet:
+            lines.append(f"   {snippet}")
+        meta_parts = []
+        if score is not None:
+            meta_parts.append(f"score: {score}")
+        if meta_parts:
+            lines.append(f"   [{' | '.join(meta_parts)}]")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _search_searxng(
     query: str,
-    categories: str = "general",
-    language: str = "en",
-    max_results: int = 10,
-    timeout: int = 30,
+    categories: str,
+    language: str,
+    max_results: int,
+    timeout: int,
 ) -> str:
-    """Search the web using SearXNG metasearch engine.
-
-    The query supports SearXNG search syntax:
-      - Select engines with `!` prefix: `!google python`, `!wp berlin`, `!ddg test`
-      - Chain multiple engines/categories: `!map !ddg !wp paris`
-      - Filter by language with `:` prefix: `:fr !wp Wau Holland`, `:de berlin`
-      - Use `!!` for external bangs (DuckDuckGo-style): `!!wfr Wau Holland`
-      - Use `!!` alone to auto-redirect to first result: `!! Wau Holland`
-
-    Args:
-        query: The search query string. Supports SearXNG operators described above.
-        categories: Comma-separated search categories (general, images, news, science, files, it, map, music, social media, videos).
-        language: Search language code (default "en"). Can also be set in query with `:lang` prefix.
-        max_results: Maximum number of results to return (default 10).
-        timeout: Request timeout in seconds.
-
-    Returns:
-        Formatted search results with title, URL, snippet, score, and metadata.
-    """
-    if not query.strip():
-        raise ValueError("Search query cannot be empty.")
-
+    """Execute a search using SearXNG."""
     params = {
         "q": query,
         "format": "json",
@@ -103,3 +120,42 @@ def web_search(
                 lines.append(f"  {box_content}")
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def web_search(
+    query: str,
+    categories: str = "general",
+    language: str = "en",
+    max_results: int = 10,
+    timeout: int = 30,
+) -> str:
+    """Search the web using SearXNG metasearch engine or Tavily.
+
+    The search provider is selected via the SEARCH_PROVIDER env var
+    ('searxng' [default] or 'tavily').
+
+    When using SearXNG, the query supports SearXNG search syntax:
+      - Select engines with `!` prefix: `!google python`, `!wp berlin`, `!ddg test`
+      - Chain multiple engines/categories: `!map !ddg !wp paris`
+      - Filter by language with `:` prefix: `:fr !wp Wau Holland`, `:de berlin`
+      - Use `!!` for external bangs (DuckDuckGo-style): `!!wfr Wau Holland`
+      - Use `!!` alone to auto-redirect to first result: `!! Wau Holland`
+
+    Args:
+        query: The search query string. Supports SearXNG operators when using SearXNG provider.
+        categories: Comma-separated search categories (SearXNG only).
+        language: Search language code (default "en"). SearXNG only.
+        max_results: Maximum number of results to return (default 10).
+        timeout: Request timeout in seconds (SearXNG only).
+
+    Returns:
+        Formatted search results with title, URL, snippet, score, and metadata.
+    """
+    if not query.strip():
+        raise ValueError("Search query cannot be empty.")
+
+    if SEARCH_PROVIDER == "tavily":
+        return _search_tavily(query, max_results)
+
+    return _search_searxng(query, categories, language, max_results, timeout)

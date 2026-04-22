@@ -7,3 +7,5 @@ services:
       - ./workspace:/workspace
     environment:
       - PYTHONUNBUFFERED=1
+      # - SEARCH_PROVIDER=tavily  # Options: 'searxng' (default), 'tavily'
+      # - TAVILY_API_KEY=tvly-YOUR_API_KEY
