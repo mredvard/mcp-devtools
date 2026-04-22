@@ -15,6 +15,11 @@ SEARCH_PROVIDER = os.environ.get("SEARCH_PROVIDER", "searxng").lower()
 
 def _search_tavily(query: str, max_results: int) -> str:
     """Execute a search using the Tavily API."""
+    if not os.environ.get("TAVILY_API_KEY"):
+        raise ValueError(
+            "TAVILY_API_KEY environment variable is required when SEARCH_PROVIDER=tavily"
+        )
+
     from tavily import TavilyClient
 
     client = TavilyClient()

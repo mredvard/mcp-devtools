@@ -208,21 +208,17 @@ TAVILY_SEARCH_RESPONSE = {
 }
 
 
+@patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"})
+@patch("tavily.TavilyClient")
 @patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
-@patch("devtools.tools.web_search.TavilyClient", create=True)
 def test_tavily_search_success(mock_tavily_cls):
     mock_client = MagicMock()
     mock_client.search.return_value = TAVILY_SEARCH_RESPONSE
     mock_tavily_cls.return_value = mock_client
 
-    with patch("devtools.tools.web_search._search_tavily") as original:
-        # Call through to the real implementation but with mocked TavilyClient
-        original.side_effect = None  # disable side_effect so we call real func
-    # Actually call the real function with patched module-level import
     from devtools.tools.web_search import _search_tavily
 
-    with patch("tavily.TavilyClient", return_value=mock_client):
-        result = _search_tavily("python", 10)
+    result = _search_tavily("python", 10)
 
     assert "Welcome to Python.org" in result
     assert "https://www.python.org/" in result
@@ -231,6 +227,7 @@ def test_tavily_search_success(mock_tavily_cls):
     mock_client.search.assert_called_once_with(query="python", max_results=10)
 
 
+@patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"})
 @patch("tavily.TavilyClient")
 @patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
 def test_tavily_search_no_results(mock_tavily_cls):
@@ -244,6 +241,7 @@ def test_tavily_search_no_results(mock_tavily_cls):
     assert "No results found" in result
 
 
+@patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"})
 @patch("tavily.TavilyClient")
 @patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
 def test_tavily_search_max_results(mock_tavily_cls):
@@ -258,6 +256,7 @@ def test_tavily_search_max_results(mock_tavily_cls):
     assert "Welcome to Python.org" in result
 
 
+@patch.dict("os.environ", {"TAVILY_API_KEY": "tvly-test-key"})
 @patch("tavily.TavilyClient")
 @patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
 def test_tavily_provider_routing(mock_tavily_cls):
@@ -268,6 +267,22 @@ def test_tavily_provider_routing(mock_tavily_cls):
 
     result = web_search("python")
     assert "Welcome to Python.org" in result
+
+
+@patch.dict("os.environ", {}, clear=False)
+@patch("devtools.tools.web_search.SEARCH_PROVIDER", "tavily")
+def test_tavily_missing_api_key():
+    """Missing TAVILY_API_KEY should raise ValueError with clear message."""
+    import os
+    os.environ.pop("TAVILY_API_KEY", None)
+
+    from devtools.tools.web_search import _search_tavily
+
+    try:
+        _search_tavily("python", 10)
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "TAVILY_API_KEY" in str(e)
 
 
 def test_tavily_empty_query():
