@@ -138,27 +138,20 @@ class BashExecResult(BaseModel):
 class Todo(BaseModel):
     """A single todo entry."""
 
-    id: str = Field(description="Stable short identifier for the todo.")
     content: str = Field(description="Human-readable task description.")
     status: Literal["pending", "in_progress", "done"] = Field(
-        description="Current task state."
+        default="pending", description="Current task state."
     )
 
 
 class TodoWriteResult(BaseModel):
-    """Result of a todo_write action."""
+    """Result of a todo_write call."""
 
-    action: Literal["add", "update", "remove", "list", "clear"] = Field(
-        description="The action that was performed."
-    )
     message: str = Field(description="Short human-readable summary of what happened.")
     todos: list[Todo] = Field(
-        description="Full current todo list after the action was applied."
+        description="Full current todo list after the write."
     )
-    affected_id: str | None = Field(
-        default=None,
-        description="ID of the todo created/updated/removed by this call, if applicable.",
-    )
+    count: int = Field(description="Number of todos in the list after the write.")
 
 
 # --- web_fetch ---

@@ -2,115 +2,78 @@
 
 import json
 
+import pytest
+
 import devtools.tools.todo_write as todo_mod
 from devtools.tools.todo_write import todo_write
 
 
 def setup_function():
     """Clear todos before each test."""
-    todo_mod._todos.clear()
+    todo_mod._todos = []
 
 
-def test_add_todo():
-    result = todo_write("add", content="Write tests")
-    assert result.action == "add"
-    assert result.affected_id is not None
+def test_write_single_todo():
+    result = todo_write([{"content": "Write tests"}])
+    assert result.count == 1
     assert len(result.todos) == 1
     assert result.todos[0].content == "Write tests"
     assert result.todos[0].status == "pending"
 
 
-def test_list_empty():
-    result = todo_write("list")
+def test_write_empty_list_clears():
+    todo_write([{"content": "Task 1"}, {"content": "Task 2"}])
+    result = todo_write([])
+    assert result.count == 0
     assert result.todos == []
-    assert "No todos" in result.message
+    assert "Cleared" in result.message
 
 
-def test_add_and_list():
-    todo_write("add", content="Task 1")
-    todo_write("add", content="Task 2")
-    result = todo_write("list")
+def test_write_batch_replaces_existing():
+    todo_write([{"content": "Old"}])
+    result = todo_write(
+        [
+            {"content": "Task 1", "status": "in_progress"},
+            {"content": "Task 2", "status": "pending"},
+            {"content": "Task 3", "status": "done"},
+        ]
+    )
+    assert result.count == 3
     contents = [t.content for t in result.todos]
-    assert "Task 1" in contents
-    assert "Task 2" in contents
+    assert contents == ["Task 1", "Task 2", "Task 3"]
+    assert result.todos[0].status == "in_progress"
+    assert result.todos[2].status == "done"
 
 
-def test_update_status():
-    add = todo_write("add", content="Do something")
-    todo_write("update", todo_id=add.affected_id, status="done")
-    listing = todo_write("list")
-    assert listing.todos[0].status == "done"
+def test_status_defaults_to_pending():
+    result = todo_write([{"content": "A"}, {"content": "B"}])
+    assert all(t.status == "pending" for t in result.todos)
 
 
-def test_update_content():
-    add = todo_write("add", content="Old content")
-    todo_write("update", todo_id=add.affected_id, content="New content")
-    listing = todo_write("list")
-    assert listing.todos[0].content == "New content"
-
-
-def test_remove():
-    add = todo_write("add", content="Remove me")
-    rem = todo_write("remove", todo_id=add.affected_id)
-    assert rem.affected_id == add.affected_id
-    listing = todo_write("list")
-    assert listing.todos == []
-
-
-def test_clear():
-    todo_write("add", content="A")
-    todo_write("add", content="B")
-    result = todo_write("clear")
-    assert "Cleared 2" in result.message
-    assert result.todos == []
+def test_update_status_via_rewrite():
+    first = todo_write([{"content": "Do something"}])
+    item = first.todos[0]
+    result = todo_write([{"content": item.content, "status": "done"}])
+    assert result.todos[0].status == "done"
 
 
 def test_persistence(tmp_path):
     pf = str(tmp_path / "todos.json")
-    todo_write("add", content="Persisted", persist_file=pf)
-    todo_mod._todos.clear()
-    result = todo_write("list", persist_file=pf)
-    assert any(t.content == "Persisted" for t in result.todos)
+    todo_write([{"content": "Persisted"}], persist_file=pf)
+    todo_mod._todos = []
+    todo_mod._load(pf)
+    assert len(todo_mod._todos) == 1
+    assert todo_mod._todos[0].content == "Persisted"
     data = json.loads((tmp_path / "todos.json").read_text())
     assert len(data) == 1
+    assert data[0]["content"] == "Persisted"
 
 
-def test_invalid_action():
-    try:
-        todo_write("invalid")
-        assert False, "Should have raised"
-    except ValueError:
-        pass
+def test_invalid_status():
+    with pytest.raises(Exception):
+        todo_write([{"content": "x", "status": "invalid"}])
 
 
-def test_add_missing_content():
-    try:
-        todo_write("add")
-        assert False, "Should have raised"
-    except ValueError:
-        pass
-
-
-def test_update_missing_id():
-    try:
-        todo_write("update", status="done")
-        assert False, "Should have raised"
-    except ValueError:
-        pass
-
-
-def test_update_invalid_status():
-    add = todo_write("add", content="Test")
-    try:
-        todo_write("update", todo_id=add.affected_id, status="invalid")
-        assert False, "Should have raised"
-    except ValueError:
-        pass
-
-
-def test_remove_nonexistent():
-    try:
-        todo_write("remove", todo_id="nonexistent")
-        assert False, "Should have raised"
-    except KeyError:
-        pass
+def test_empty_content_rejected():
+    with pytest.raises(ValueError):
+        todo_write([{"content": ""}])
