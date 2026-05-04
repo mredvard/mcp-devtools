@@ -4,10 +4,13 @@ from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected, validate_path_not_sensitive
 from devtools.server import DEFAULT_WORKDIR, mcp
+from devtools.tools.models import EditFileResult
 
 
 @mcp.tool()
-def edit_file(file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+def edit_file(
+    file_path: str, old_string: str, new_string: str, replace_all: bool = False
+) -> EditFileResult:
     """Perform exact string replacement in a file.
 
     Args:
@@ -17,7 +20,8 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
         replace_all: If True, replace all occurrences. If False, require exactly one match.
 
     Returns:
-        Success message with replacement count.
+        Structured result with file path, replacement count, and the replace_all
+        flag that was used.
     """
     validate_path_not_protected(file_path)
     validate_path_not_sensitive(file_path, operation="edit")
@@ -43,4 +47,8 @@ def edit_file(file_path: str, old_string: str, new_string: str, replace_all: boo
     p.write_text(new_content, encoding="utf-8")
 
     replaced = count if replace_all else 1
-    return f"Successfully replaced {replaced} occurrence(s) in {file_path}"
+    return EditFileResult(
+        file_path=str(p),
+        replacements=replaced,
+        replace_all=replace_all,
+    )

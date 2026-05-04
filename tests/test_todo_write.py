@@ -13,63 +13,64 @@ def setup_function():
 
 def test_add_todo():
     result = todo_write("add", content="Write tests")
-    assert "Added todo" in result
-    assert "Write tests" in result
+    assert result.action == "add"
+    assert result.affected_id is not None
+    assert len(result.todos) == 1
+    assert result.todos[0].content == "Write tests"
+    assert result.todos[0].status == "pending"
 
 
 def test_list_empty():
     result = todo_write("list")
-    assert "No todos" in result
+    assert result.todos == []
+    assert "No todos" in result.message
 
 
 def test_add_and_list():
     todo_write("add", content="Task 1")
     todo_write("add", content="Task 2")
     result = todo_write("list")
-    assert "Task 1" in result
-    assert "Task 2" in result
+    contents = [t.content for t in result.todos]
+    assert "Task 1" in contents
+    assert "Task 2" in contents
 
 
 def test_update_status():
-    result = todo_write("add", content="Do something")
-    tid = result.split()[2].rstrip(":")
-    todo_write("update", todo_id=tid, status="done")
+    add = todo_write("add", content="Do something")
+    todo_write("update", todo_id=add.affected_id, status="done")
     listing = todo_write("list")
-    assert "[done]" in listing
+    assert listing.todos[0].status == "done"
 
 
 def test_update_content():
-    result = todo_write("add", content="Old content")
-    tid = result.split()[2].rstrip(":")
-    todo_write("update", todo_id=tid, content="New content")
+    add = todo_write("add", content="Old content")
+    todo_write("update", todo_id=add.affected_id, content="New content")
     listing = todo_write("list")
-    assert "New content" in listing
+    assert listing.todos[0].content == "New content"
 
 
 def test_remove():
-    result = todo_write("add", content="Remove me")
-    tid = result.split()[2].rstrip(":")
-    todo_write("remove", todo_id=tid)
+    add = todo_write("add", content="Remove me")
+    rem = todo_write("remove", todo_id=add.affected_id)
+    assert rem.affected_id == add.affected_id
     listing = todo_write("list")
-    assert "No todos" in listing
+    assert listing.todos == []
 
 
 def test_clear():
     todo_write("add", content="A")
     todo_write("add", content="B")
     result = todo_write("clear")
-    assert "Cleared 2" in result
-    assert "No todos" in todo_write("list")
+    assert "Cleared 2" in result.message
+    assert result.todos == []
 
 
 def test_persistence(tmp_path):
     pf = str(tmp_path / "todos.json")
     todo_write("add", content="Persisted", persist_file=pf)
-    # Clear in-memory and reload from file
     todo_mod._todos.clear()
     result = todo_write("list", persist_file=pf)
-    assert "Persisted" in result
-    # Verify file content
+    assert any(t.content == "Persisted" for t in result.todos)
     data = json.loads((tmp_path / "todos.json").read_text())
     assert len(data) == 1
 
@@ -99,10 +100,9 @@ def test_update_missing_id():
 
 
 def test_update_invalid_status():
-    result = todo_write("add", content="Test")
-    tid = result.split()[2].rstrip(":")
+    add = todo_write("add", content="Test")
     try:
-        todo_write("update", todo_id=tid, status="invalid")
+        todo_write("update", todo_id=add.affected_id, status="invalid")
         assert False, "Should have raised"
     except ValueError:
         pass

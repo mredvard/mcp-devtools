@@ -1,35 +1,44 @@
 """Tests for read_file tool."""
 
 import json
-from pathlib import Path
 
 from devtools.tools.read import read_file
 
 
 def test_read_text_file(sample_dir):
     result = read_file(str(sample_dir / "hello.txt"))
-    assert "1\tHello, world!" in result
-    assert "2\tSecond line" in result
-    assert "3\tThird line" in result
+    assert result.kind == "text"
+    assert "1\tHello, world!" in result.content
+    assert "2\tSecond line" in result.content
+    assert "3\tThird line" in result.content
+    assert result.line_count == 3
+    assert result.start_line == 1
+    assert result.truncated is False
+    assert result.byte_size > 0
 
 
 def test_read_with_offset(sample_dir):
     result = read_file(str(sample_dir / "hello.txt"), offset=1)
-    assert "2\tSecond line" in result
-    assert "Hello, world!" not in result
+    assert "2\tSecond line" in result.content
+    assert "Hello, world!" not in result.content
+    assert result.start_line == 2
 
 
 def test_read_with_limit(sample_dir):
     result = read_file(str(sample_dir / "hello.txt"), limit=1)
-    assert "1\tHello, world!" in result
-    assert "Second line" not in result
+    assert "1\tHello, world!" in result.content
+    assert "Second line" not in result.content
+    assert result.line_count == 1
+    assert result.truncated is True
 
 
 def test_read_with_offset_and_limit(sample_dir):
     result = read_file(str(sample_dir / "hello.txt"), offset=1, limit=1)
-    assert "2\tSecond line" in result
-    assert "Hello, world!" not in result
-    assert "Third line" not in result
+    assert "2\tSecond line" in result.content
+    assert "Hello, world!" not in result.content
+    assert "Third line" not in result.content
+    assert result.start_line == 2
+    assert result.truncated is True
 
 
 def test_read_nonexistent():
@@ -50,15 +59,17 @@ def test_read_directory(sample_dir):
 
 def test_read_binary_file(sample_dir):
     result = read_file(str(sample_dir / "binary.bin"))
-    assert "[Binary file:" in result
+    assert result.kind == "binary"
+    assert "[Binary file:" in result.content
 
 
 def test_read_image_file(tmp_path):
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\nfakedata")
     result = read_file(str(img))
-    assert "[Image: test.png]" in result
-    assert "base64:" in result
+    assert result.kind == "image"
+    assert "[Image: test.png]" in result.content
+    assert "base64:" in result.content
 
 
 def test_read_notebook(tmp_path):
@@ -82,8 +93,9 @@ def test_read_notebook(tmp_path):
     path = tmp_path / "test.ipynb"
     path.write_text(json.dumps(nb))
     result = read_file(str(path))
-    assert "Cell 1 [code]" in result
-    assert "print('hello')" in result
-    assert "[Output]" in result
-    assert "Cell 2 [markdown]" in result
-    assert "# Title" in result
+    assert result.kind == "notebook"
+    assert "Cell 1 [code]" in result.content
+    assert "print('hello')" in result.content
+    assert "[Output]" in result.content
+    assert "Cell 2 [markdown]" in result.content
+    assert "# Title" in result.content

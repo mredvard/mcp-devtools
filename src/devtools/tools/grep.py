@@ -5,6 +5,7 @@ from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected
 from devtools.server import DEFAULT_WORKDIR, mcp
+from devtools.tools.models import GrepFilesResult, GrepMatch
 
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", ".tox", ".mypy_cache"}
 
@@ -17,19 +18,21 @@ def grep_files(
     context: int = 0,
     case_insensitive: bool = False,
     max_results: int = 250,
-) -> str:
+) -> GrepFilesResult:
     """Search file contents using regex.
 
     Args:
         pattern: Regular expression pattern to search for.
-        path: Directory to search in. Defaults to current working directory.
+        path: Directory to search in. Defaults to the configured workdir.
         glob_filter: Optional glob pattern to filter files (e.g., '*.py').
         context: Number of context lines before and after each match.
         case_insensitive: If True, search case-insensitively.
-        max_results: Maximum number of matching lines to return.
+        max_results: Maximum number of matching/context entries to return.
 
     Returns:
-        Matching lines in filepath:lineno:content format.
+        Structured result with the pattern, base path, list of matches (each
+        with file path, line number, line text, and an is_context flag), the
+        total entry count, and a truncation flag.
     """
     base = Path(path) if path else Path(DEFAULT_WORKDIR)
 
@@ -44,7 +47,8 @@ def grep_files(
     except re.error as e:
         raise ValueError(f"Invalid regex pattern: {e}")
 
-    results: list[str] = []
+    matches: list[GrepMatch] = []
+    truncated = False
 
     if base.is_file():
         files = [base]
@@ -57,7 +61,6 @@ def grep_files(
         if any(part in SKIP_DIRS for part in fp.parts):
             continue
 
-        # Skip binary files
         try:
             raw = fp.read_bytes()
         except (PermissionError, OSError):
@@ -77,17 +80,34 @@ def grep_files(
                     start = max(0, i - context)
                     end = min(len(lines), i + context + 1)
                     for j in range(start, end):
-                        sep = ":" if j == i else "-"
-                        results.append(f"{fp}:{j + 1}{sep}{lines[j]}")
-                    results.append("--")
+                        matches.append(
+                            GrepMatch(
+                                file_path=str(fp),
+                                line_number=j + 1,
+                                line=lines[j],
+                                is_context=(j != i),
+                            )
+                        )
                 else:
-                    results.append(f"{fp}:{i + 1}:{line}")
+                    matches.append(
+                        GrepMatch(
+                            file_path=str(fp),
+                            line_number=i + 1,
+                            line=line,
+                            is_context=False,
+                        )
+                    )
 
-                if len(results) >= max_results:
-                    results.append(f"(truncated at {max_results} results)")
-                    return "\n".join(results)
+                if len(matches) >= max_results:
+                    truncated = True
+                    break
+        if truncated:
+            break
 
-    if not results:
-        return "No matches found."
-
-    return "\n".join(results)
+    return GrepFilesResult(
+        pattern=pattern,
+        base_path=str(base),
+        matches=matches,
+        total_matches=len(matches),
+        truncated=truncated,
+    )

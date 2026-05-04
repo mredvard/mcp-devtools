@@ -12,8 +12,10 @@ def test_fetch_success():
         return_value=httpx.Response(200, text="Hello from API")
     )
     result = web_fetch("https://example.com/api")
-    assert "[Status: 200]" in result
-    assert "Hello from API" in result
+    assert result.status_code == 200
+    assert "Hello from API" in result.content
+    assert result.truncated is False
+    assert result.extracted is False
 
 
 @respx.mock
@@ -22,8 +24,8 @@ def test_fetch_404():
         return_value=httpx.Response(404, text="Not Found")
     )
     result = web_fetch("https://example.com/missing")
-    assert "[Status: 404]" in result
-    assert "Not Found" in result
+    assert result.status_code == 404
+    assert "Not Found" in result.content
 
 
 @respx.mock
@@ -33,8 +35,10 @@ def test_fetch_truncation():
         return_value=httpx.Response(200, text=long_text)
     )
     result = web_fetch("https://example.com/long", max_length=50)
-    assert "content truncated" in result
-    assert "x" * 50 in result
+    assert result.truncated is True
+    assert result.returned_length == 50
+    assert result.total_length == 200
+    assert result.content == "x" * 50
 
 
 def test_fetch_invalid_scheme():
@@ -51,7 +55,7 @@ def test_fetch_post():
         return_value=httpx.Response(201, text="Created")
     )
     result = web_fetch("https://example.com/submit", method="POST")
-    assert "[Status: 201]" in result
+    assert result.status_code == 201
 
 
 @respx.mock
@@ -103,7 +107,6 @@ def test_extract_text_strips_nav_header_footer():
 def test_extract_text_collapses_blank_lines():
     html = "<p>A</p><br><br><br><br><br><p>B</p>"
     result = _extract_text(html)
-    # Should not have more than one blank line between A and B
     assert "\n\n\n" not in result
     assert "A" in result
     assert "B" in result
@@ -116,9 +119,10 @@ def test_fetch_with_extract_content():
         return_value=httpx.Response(200, text=html)
     )
     result = web_fetch("https://example.com/page", extract_content=True)
-    assert "Real content" in result
-    assert "Menu" not in result
-    assert "x=1" not in result
+    assert result.extracted is True
+    assert "Real content" in result.content
+    assert "Menu" not in result.content
+    assert "x=1" not in result.content
 
 
 # --- start_index tests ---
@@ -131,9 +135,10 @@ def test_fetch_with_start_index():
         return_value=httpx.Response(200, text=text)
     )
     result = web_fetch("https://example.com/long", start_index=100)
-    assert "B" * 100 in result
-    assert "A" * 100 not in result
-    assert "from character 100" in result
+    assert "B" * 100 in result.content
+    assert "A" * 100 not in result.content
+    assert result.start_index == 100
+    assert result.total_length == 200
 
 
 @respx.mock
@@ -143,9 +148,11 @@ def test_fetch_start_index_with_truncation():
         return_value=httpx.Response(200, text=text)
     )
     result = web_fetch("https://example.com/long", start_index=50, max_length=50)
-    assert "B" * 50 in result
-    assert "content truncated" in result
-    assert "50-100 of 150" in result
+    assert result.content == "B" * 50
+    assert result.truncated is True
+    assert result.start_index == 50
+    assert result.total_length == 150
+    assert result.returned_length == 50
 
 
 @respx.mock
@@ -155,5 +162,6 @@ def test_fetch_extract_content_with_start_index():
         return_value=httpx.Response(200, text=html)
     )
     result = web_fetch("https://example.com/page", extract_content=True, start_index=100, max_length=50)
-    assert "Menu" not in result
-    assert "content truncated" in result
+    assert "Menu" not in result.content
+    assert result.truncated is True
+    assert result.extracted is True

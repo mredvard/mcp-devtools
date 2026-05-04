@@ -6,12 +6,13 @@ from pathlib import Path
 
 from devtools.guardrails import validate_path_not_sensitive
 from devtools.server import DEFAULT_WORKDIR, mcp
+from devtools.tools.models import ReadFileResult
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico"}
 
 
 @mcp.tool()
-def read_file(file_path: str, offset: int = 0, limit: int = 0) -> str:
+def read_file(file_path: str, offset: int = 0, limit: int = 0) -> ReadFileResult:
     """Read a file and return its contents with line numbers.
 
     Args:
@@ -20,7 +21,9 @@ def read_file(file_path: str, offset: int = 0, limit: int = 0) -> str:
         limit: Maximum number of lines to read (0 means all).
 
     Returns:
-        File contents with cat -n style line numbers, or base64 for images.
+        Structured result with file content (cat -n style line numbers for text,
+        base64 marker for images, placeholder for binary), kind, line count,
+        starting line, truncation flag, and total file size.
     """
     validate_path_not_sensitive(file_path, operation="read")
 
@@ -31,38 +34,66 @@ def read_file(file_path: str, offset: int = 0, limit: int = 0) -> str:
     if p.is_dir():
         raise IsADirectoryError(f"Is a directory: {file_path}")
 
-    # Handle image files
+    byte_size = p.stat().st_size
+
     if p.suffix.lower() in IMAGE_EXTENSIONS:
         data = p.read_bytes()
         encoded = base64.b64encode(data).decode("ascii")
-        return f"[Image: {p.name}] base64:{encoded}"
+        return ReadFileResult(
+            file_path=str(p),
+            content=f"[Image: {p.name}] base64:{encoded}",
+            kind="image",
+            line_count=0,
+            start_line=1,
+            truncated=False,
+            byte_size=byte_size,
+        )
 
-    # Handle Jupyter notebooks
     if p.suffix.lower() == ".ipynb":
-        return _read_notebook(p)
+        rendered = _read_notebook(p)
+        return ReadFileResult(
+            file_path=str(p),
+            content=rendered,
+            kind="notebook",
+            line_count=len(rendered.splitlines()),
+            start_line=1,
+            truncated=False,
+            byte_size=byte_size,
+        )
 
-    # Detect binary files
     raw = p.read_bytes()
     if b"\x00" in raw[:8192]:
-        return f"[Binary file: {p.name}, {len(raw)} bytes]"
+        return ReadFileResult(
+            file_path=str(p),
+            content=f"[Binary file: {p.name}, {len(raw)} bytes]",
+            kind="binary",
+            line_count=0,
+            start_line=1,
+            truncated=False,
+            byte_size=byte_size,
+        )
 
     text = raw.decode("utf-8", errors="replace")
-    lines = text.splitlines(keepends=True)
+    all_lines = text.splitlines(keepends=True)
 
-    # Apply offset and limit
-    if offset > 0:
-        lines = lines[offset:]
-    if limit > 0:
+    lines = all_lines[offset:] if offset > 0 else all_lines
+    truncated = False
+    if limit > 0 and len(lines) > limit:
         lines = lines[:limit]
+        truncated = True
 
-    # Format with line numbers (cat -n style)
     start = offset + 1
-    numbered = []
-    for i, line in enumerate(lines):
-        line_no = start + i
-        numbered.append(f"{line_no:>6}\t{line.rstrip()}")
+    numbered = [f"{start + i:>6}\t{line.rstrip()}" for i, line in enumerate(lines)]
 
-    return "\n".join(numbered)
+    return ReadFileResult(
+        file_path=str(p),
+        content="\n".join(numbered),
+        kind="text",
+        line_count=len(lines),
+        start_line=start,
+        truncated=truncated,
+        byte_size=byte_size,
+    )
 
 
 def _read_notebook(p: Path) -> str:

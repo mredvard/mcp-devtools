@@ -5,21 +5,23 @@ from pathlib import Path
 
 from devtools.guardrails import validate_bash_command
 from devtools.server import DEFAULT_WORKDIR, mcp
+from devtools.tools.models import BashExecResult
 
 MAX_TIMEOUT = 600
 
 
 @mcp.tool()
-def bash_exec(command: str, timeout: int = 120, cwd: str | None = None) -> str:
+def bash_exec(command: str, timeout: int = 120, cwd: str | None = None) -> BashExecResult:
     """Execute a shell command and return its output.
 
     Args:
         command: The shell command to execute.
         timeout: Timeout in seconds (max 600).
-        cwd: Working directory for the command. Defaults to /home/sandbox.
+        cwd: Working directory for the command. Defaults to the configured workdir.
 
     Returns:
-        Command output including stdout, stderr, and return code.
+        Structured result with command, working directory, captured stdout and
+        stderr, exit code, and a timed_out flag (exit_code is -1 on timeout).
     """
     validate_bash_command(command)
 
@@ -39,13 +41,20 @@ def bash_exec(command: str, timeout: int = 120, cwd: str | None = None) -> str:
             cwd=work_dir,
         )
     except subprocess.TimeoutExpired:
-        return f"Command timed out after {timeout} seconds."
+        return BashExecResult(
+            command=command,
+            cwd=work_dir,
+            stdout="",
+            stderr=f"Command timed out after {timeout} seconds.",
+            exit_code=-1,
+            timed_out=True,
+        )
 
-    parts = []
-    if result.stdout:
-        parts.append(result.stdout)
-    if result.stderr:
-        parts.append(f"[stderr]\n{result.stderr}")
-    parts.append(f"[exit code: {result.returncode}]")
-
-    return "\n".join(parts)
+    return BashExecResult(
+        command=command,
+        cwd=work_dir,
+        stdout=result.stdout or "",
+        stderr=result.stderr or "",
+        exit_code=result.returncode,
+        timed_out=False,
+    )

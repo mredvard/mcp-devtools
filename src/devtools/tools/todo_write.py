@@ -5,11 +5,16 @@ import uuid
 from pathlib import Path
 
 from devtools.server import mcp
+from devtools.tools.models import Todo, TodoWriteResult
 
-# In-memory store
 _todos: dict[str, dict] = {}
 
 VALID_STATUSES = {"pending", "in_progress", "done"}
+VALID_ACTIONS = {"add", "update", "remove", "list", "clear"}
+
+
+def _snapshot() -> list[Todo]:
+    return [Todo(**t) for t in _todos.values()]
 
 
 @mcp.tool()
@@ -19,7 +24,7 @@ def todo_write(
     todo_id: str | None = None,
     status: str | None = None,
     persist_file: str | None = None,
-) -> str:
+) -> TodoWriteResult:
     """Manage a task list with add, update, remove, list, and clear actions.
 
     Args:
@@ -30,17 +35,25 @@ def todo_write(
         persist_file: Optional JSON file path for persistence.
 
     Returns:
-        Result message or task list.
+        Structured result with the action, a human-readable message, the full
+        current todo list, and the affected todo id (when applicable).
     """
     global _todos
 
-    # Load from file if specified
+    if action not in VALID_ACTIONS:
+        raise ValueError(f"Invalid action '{action}'. Must be one of: add, update, remove, list, clear")
+
     if persist_file:
         _load(persist_file)
+
+    affected_id: str | None = None
+    message: str
 
     if action == "add":
         if not content:
             raise ValueError("content is required for 'add' action")
+        if status and status not in VALID_STATUSES:
+            raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
         tid = str(uuid.uuid4())[:8]
         _todos[tid] = {
             "id": tid,
@@ -48,7 +61,8 @@ def todo_write(
             "status": status or "pending",
         }
         _save(persist_file)
-        return f"Added todo {tid}: {content}"
+        affected_id = tid
+        message = f"Added todo {tid}: {content}"
 
     elif action == "update":
         if not todo_id:
@@ -62,7 +76,8 @@ def todo_write(
                 raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
             _todos[todo_id]["status"] = status
         _save(persist_file)
-        return f"Updated todo {todo_id}"
+        affected_id = todo_id
+        message = f"Updated todo {todo_id}"
 
     elif action == "remove":
         if not todo_id:
@@ -71,24 +86,24 @@ def todo_write(
             raise KeyError(f"Todo not found: {todo_id}")
         del _todos[todo_id]
         _save(persist_file)
-        return f"Removed todo {todo_id}"
+        affected_id = todo_id
+        message = f"Removed todo {todo_id}"
 
     elif action == "list":
-        if not _todos:
-            return "No todos."
-        lines = []
-        for tid, todo in _todos.items():
-            lines.append(f"[{todo['status']}] {tid}: {todo['content']}")
-        return "\n".join(lines)
+        message = "No todos." if not _todos else f"{len(_todos)} todo(s)."
 
-    elif action == "clear":
+    else:  # clear
         count = len(_todos)
         _todos.clear()
         _save(persist_file)
-        return f"Cleared {count} todos."
+        message = f"Cleared {count} todos."
 
-    else:
-        raise ValueError(f"Invalid action '{action}'. Must be one of: add, update, remove, list, clear")
+    return TodoWriteResult(
+        action=action,
+        message=message,
+        todos=_snapshot(),
+        affected_id=affected_id,
+    )
 
 
 def _load(persist_file: str | None):

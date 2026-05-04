@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from devtools.guardrails import validate_url_not_internal
 from devtools.server import mcp
+from devtools.tools.models import WebFetchResult
 
 ALLOWED_SCHEMES = {"http", "https"}
 
@@ -22,11 +23,8 @@ def _extract_text(html: str) -> str:
         tag.decompose()
 
     text = soup.get_text(separator="\n")
-    # Collapse multiple blank lines into one
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Strip leading/trailing whitespace per line
     text = "\n".join(line.strip() for line in text.splitlines())
-    # Remove leading/trailing blank lines
     return text.strip()
 
 
@@ -39,7 +37,7 @@ def web_fetch(
     max_length: int = 100_000,
     start_index: int = 0,
     extract_content: bool = False,
-) -> str:
+) -> WebFetchResult:
     """Fetch content from a URL.
 
     For long pages where the useful content is beyond the initial portion,
@@ -59,7 +57,9 @@ def web_fetch(
             scripts, styles, nav, headers, footers, and other boilerplate.
 
     Returns:
-        Status code and response body text.
+        Structured result with the URL, status code, content body, content
+        type, extraction flag, pagination offsets, returned/total length, and
+        a truncation flag.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ALLOWED_SCHEMES:
@@ -71,22 +71,26 @@ def web_fetch(
         response = client.request(method, url, headers=headers)
 
     body = response.text
-
     if extract_content:
         body = _extract_text(body)
 
     total_length = len(body)
-
     if start_index > 0:
         body = body[start_index:]
 
-    truncated = ""
+    truncated = False
     if len(body) > max_length:
         body = body[:max_length]
-        truncated = f"\n(content truncated: showing {start_index}-{start_index + max_length} of {total_length} characters)"
+        truncated = True
 
-    metadata = f"[Status: {response.status_code}]"
-    if start_index > 0 and not truncated:
-        metadata += f" (showing from character {start_index} of {total_length})"
-
-    return f"{metadata}\n{body}{truncated}"
+    return WebFetchResult(
+        url=str(response.url),
+        status_code=response.status_code,
+        content=body,
+        content_type=response.headers.get("content-type"),
+        extracted=extract_content,
+        start_index=start_index,
+        returned_length=len(body),
+        total_length=total_length,
+        truncated=truncated,
+    )

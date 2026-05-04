@@ -67,12 +67,15 @@ def test_search_success():
         return_value=httpx.Response(200, json=SEARCH_RESPONSE)
     )
     result = web_search("python")
-    assert "Welcome to Python.org" in result
-    assert "https://www.python.org/" in result
-    assert "Python is a versatile" in result
-    assert "via: google, startpage, duckduckgo, brave" in result
-    assert "score: 16.0" in result
-    assert "category: general" in result
+    assert result.query == "python"
+    assert len(result.results) == 2
+    first = result.results[0]
+    assert first.title == "Welcome to Python.org"
+    assert first.url == "https://www.python.org/"
+    assert "versatile" in first.snippet
+    assert first.engines == ["google", "startpage", "duckduckgo", "brave"]
+    assert first.score == 16.0
+    assert first.category == "general"
 
 
 @respx.mock
@@ -81,8 +84,7 @@ def test_search_suggestions():
         return_value=httpx.Response(200, json=SEARCH_RESPONSE)
     )
     result = web_search("python")
-    assert "Suggestions:" in result
-    assert "Python free" in result
+    assert "Python free" in result.suggestions
 
 
 @respx.mock
@@ -91,8 +93,9 @@ def test_search_infobox():
         return_value=httpx.Response(200, json=SEARCH_RESPONSE)
     )
     result = web_search("python")
-    assert "Infobox: Python" in result
-    assert "general-purpose programming language" in result
+    assert len(result.infoboxes) == 1
+    assert result.infoboxes[0].title == "Python"
+    assert "general-purpose programming language" in result.infoboxes[0].content
 
 
 @respx.mock
@@ -104,7 +107,8 @@ def test_search_no_results():
         )
     )
     result = web_search("xyznonexistent")
-    assert "No results found" in result
+    assert result.results == []
+    assert result.error is None
 
 
 @respx.mock
@@ -137,8 +141,10 @@ def test_search_max_results():
         return_value=httpx.Response(200, json=many_results)
     )
     result = web_search("test", max_results=5)
-    assert "Result 4" in result
-    assert "Result 5" not in result
+    assert len(result.results) == 5
+    titles = [r.title for r in result.results]
+    assert "Result 4" in titles
+    assert "Result 5" not in titles
 
 
 @respx.mock
@@ -147,8 +153,9 @@ def test_search_error_status():
         return_value=httpx.Response(500, text="Internal Server Error")
     )
     result = web_search("test")
-    assert "Error" in result
-    assert "500" in result
+    assert result.error is not None
+    assert "500" in result.error
+    assert result.results == []
 
 
 def test_search_empty_query():
@@ -169,6 +176,53 @@ def test_search_network_error():
         assert False, "Should have raised"
     except httpx.ConnectError:
         pass
+
+
+@respx.mock
+def test_search_image_result_thumbnail_and_img_src():
+    """Image-category results carry img_src and thumbnail_src — both should surface."""
+    image_response = {
+        "query": "python logo",
+        "number_of_results": 1,
+        "results": [
+            {
+                "template": "images.html",
+                "url": "https://example.com/page",
+                "title": "Python Logo",
+                "content": "",
+                "engine": "google images",
+                "engines": ["google images"],
+                "score": 1.0,
+                "category": "images",
+                "publishedDate": None,
+                "thumbnail": "",
+                "thumbnail_src": "https://example.com/thumb.png",
+                "img_src": "https://example.com/full.png",
+            }
+        ],
+        "answers": [],
+        "corrections": [],
+        "infoboxes": [],
+        "suggestions": [],
+        "unresponsive_engines": [],
+    }
+    respx.get(f"{SEARXNG_BASE_URL}/search").mock(
+        return_value=httpx.Response(200, json=image_response)
+    )
+    result = web_search("python logo", categories="images")
+    assert result.results[0].img_src == "https://example.com/full.png"
+    assert result.results[0].thumbnail == "https://example.com/thumb.png"
+
+
+@respx.mock
+def test_search_general_result_has_no_thumbnail():
+    """General results have empty thumbnail/img_src; we coerce to None."""
+    respx.get(f"{SEARXNG_BASE_URL}/search").mock(
+        return_value=httpx.Response(200, json=SEARCH_RESPONSE)
+    )
+    result = web_search("python")
+    assert result.results[0].thumbnail is None
+    assert result.results[0].img_src is None
 
 
 @respx.mock

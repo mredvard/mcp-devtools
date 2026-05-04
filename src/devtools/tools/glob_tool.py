@@ -4,20 +4,23 @@ from pathlib import Path
 
 from devtools.guardrails import validate_path_not_protected
 from devtools.server import DEFAULT_WORKDIR, mcp
+from devtools.tools.models import GlobFilesResult
 
 MAX_RESULTS = 1000
 
 
 @mcp.tool()
-def glob_files(pattern: str, path: str | None = None) -> str:
+def glob_files(pattern: str, path: str | None = None) -> GlobFilesResult:
     """Find files matching a glob pattern.
 
     Args:
         pattern: Glob pattern to match (e.g., '**/*.py').
-        path: Directory to search in. Defaults to current working directory.
+        path: Directory to search in. Defaults to the configured workdir.
 
     Returns:
-        Matching file paths sorted by modification time (newest first), one per line.
+        Structured result with the pattern, base path, matching file paths
+        sorted by mtime (newest first), the total number of matches before
+        truncation, and a truncation flag.
     """
     base = Path(path) if path else Path(DEFAULT_WORKDIR)
 
@@ -29,10 +32,14 @@ def glob_files(pattern: str, path: str | None = None) -> str:
     validate_path_not_protected(str(base))
 
     matches = sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-
-    if not matches:
-        return "No files matched the pattern."
-
+    total = len(matches)
+    truncated = total > MAX_RESULTS
     results = [str(m) for m in matches[:MAX_RESULTS]]
-    truncated = f"\n(showing {MAX_RESULTS} of {len(matches)} matches)" if len(matches) > MAX_RESULTS else ""
-    return "\n".join(results) + truncated
+
+    return GlobFilesResult(
+        pattern=pattern,
+        base_path=str(base),
+        matches=results,
+        total_matches=total,
+        truncated=truncated,
+    )

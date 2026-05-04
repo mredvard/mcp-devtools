@@ -5,6 +5,7 @@ import os
 import httpx
 
 from devtools.server import mcp
+from devtools.tools.models import Infobox, SearchResult, WebSearchResult
 
 SEARXNG_BASE_URL = os.environ.get(
     "SEARXNG_URL", "http://searxng.searxng.svc.cluster.local:8080"
@@ -18,7 +19,7 @@ def web_search(
     language: str = "en",
     max_results: int = 10,
     timeout: int = 30,
-) -> str:
+) -> WebSearchResult:
     """Search the web using SearXNG metasearch engine.
 
     The query supports SearXNG search syntax:
@@ -36,7 +37,9 @@ def web_search(
         timeout: Request timeout in seconds.
 
     Returns:
-        Formatted search results with title, URL, snippet, score, and metadata.
+        Structured result with the query, ranked search results (title, url,
+        snippet, engines, score, category, published date), suggestions, and
+        infoboxes. `error` is populated if the backend returned a non-200.
     """
     if not query.strip():
         raise ValueError("Search query cannot be empty.")
@@ -52,54 +55,39 @@ def web_search(
         response = client.get(f"{SEARXNG_BASE_URL}/search", params=params)
 
     if response.status_code != 200:
-        return f"[Error: SearXNG returned status {response.status_code}]\n{response.text[:500]}"
+        return WebSearchResult(
+            query=query,
+            results=[],
+            error=f"SearXNG returned status {response.status_code}: {response.text[:500]}",
+        )
 
     data = response.json()
-    results = data.get("results", [])
+    raw_results = data.get("results", [])[:max_results]
 
-    if not results:
-        return f"No results found for: {query}"
+    results = [
+        SearchResult(
+            title=r.get("title", "No title"),
+            url=r.get("url", ""),
+            snippet=r.get("content", ""),
+            engines=r.get("engines", []),
+            score=r.get("score"),
+            category=r.get("category"),
+            published_date=r.get("publishedDate"),
+            thumbnail=r.get("thumbnail") or r.get("thumbnail_src") or None,
+            img_src=r.get("img_src") or None,
+        )
+        for r in raw_results
+    ]
 
-    results = results[:max_results]
-    lines = [f"Search results for: {query}\n"]
+    infoboxes = [
+        Infobox(title=box.get("infobox", ""), content=box.get("content", ""))
+        for box in data.get("infoboxes", [])
+        if box.get("infobox") or box.get("content")
+    ]
 
-    for i, r in enumerate(results, 1):
-        title = r.get("title", "No title")
-        url = r.get("url", "")
-        snippet = r.get("content", "")
-        engines = ", ".join(r.get("engines", []))
-        score = r.get("score")
-        category = r.get("category", "")
-        published = r.get("publishedDate")
-
-        lines.append(f"{i}. {title}")
-        lines.append(f"   URL: {url}")
-        if snippet:
-            lines.append(f"   {snippet}")
-        meta_parts = []
-        if engines:
-            meta_parts.append(f"via: {engines}")
-        if score is not None:
-            meta_parts.append(f"score: {score}")
-        if category:
-            meta_parts.append(f"category: {category}")
-        if published:
-            meta_parts.append(f"published: {published}")
-        if meta_parts:
-            lines.append(f"   [{' | '.join(meta_parts)}]")
-        lines.append("")
-
-    suggestions = data.get("suggestions", [])
-    if suggestions:
-        lines.append(f"Suggestions: {', '.join(suggestions[:5])}")
-
-    infoboxes = data.get("infoboxes", [])
-    for box in infoboxes[:1]:
-        box_title = box.get("infobox", "")
-        box_content = box.get("content", "")
-        if box_title or box_content:
-            lines.append(f"\nInfobox: {box_title}")
-            if box_content:
-                lines.append(f"  {box_content}")
-
-    return "\n".join(lines)
+    return WebSearchResult(
+        query=query,
+        results=results,
+        suggestions=data.get("suggestions", []),
+        infoboxes=infoboxes,
+    )

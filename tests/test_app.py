@@ -36,3 +36,15 @@ async def test_tool_schema_has_input_schema(client):
     for tool in tools:
         assert "name" in tool
         assert "inputSchema" in tool
+
+
+async def test_tool_schema_has_output_schema(client):
+    """Every tool should advertise a JSON outputSchema for structured outputs."""
+    resp = await client.get("/llm/meta/tools")
+    tools = resp.json()
+    for tool in tools:
+        assert "outputSchema" in tool, f"{tool['name']} missing outputSchema"
+        schema = tool["outputSchema"]
+        assert isinstance(schema, dict)
+        assert schema.get("type") == "object"
+        assert "properties" in schema
